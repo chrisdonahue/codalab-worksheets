@@ -1594,6 +1594,12 @@ class BundleCLI(object):
                 help='If a bundle with the same command and dependencies already exists, return it instead of creating a new one.',
                 action='store_true',
             ),
+            Commands.Argument(
+                '-mn',
+                '--memoize-not-failed',
+                help='If a bundle succeeded with the same command and dependencies already exists, return it instead of creating a new one.',
+                action='store_true',
+            ),
         )
         + Commands.metadata_arguments([RunBundle])
         + EDIT_ARGUMENTS
@@ -1617,7 +1623,11 @@ class BundleCLI(object):
             # A list of matched uuids in the order they were created.
             memoized_bundles = client.fetch(
                 'bundles',
-                params={'command': args.command, 'dependencies': json.dumps(dependencies)},
+                params={
+                    'command': args.command,
+                    'dependencies': json.dumps(dependencies),
+                    'memoize_not_failed': True if args.memoize_not_failed else False,
+                },
             )
 
         if args.memoize and len(memoized_bundles) > 0:

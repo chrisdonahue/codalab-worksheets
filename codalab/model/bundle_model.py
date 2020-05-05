@@ -700,7 +700,7 @@ class BundleModel(object):
 
         return self._execute_query(query)
 
-    def get_memoized_bundles(self, user_id, command, dependencies):
+    def get_memoized_bundles(self, user_id, command, dependencies, allow_failed=True):
         """
         Get a list of bundle UUIDs that match with input command and dependencies in the order of they were created.
         :param user_id: a string that specifies the current user id.
@@ -712,6 +712,11 @@ class BundleModel(object):
         """
         # Decode json formatted dependencies string to a list of key value pairs
         dependencies = json.loads(dependencies)
+
+        # Build the base clause that filters by command, owner_id and state
+        base_clause = and_(cl_bundle.c.command == command, cl_bundle.c.owner_id == user_id)
+        if not allow_failed:
+            base_clause = and_(base_clause, cl_bundle.c.state == State.READY)
         # When there is no dependency to be matched, the target memozied bundle
         # should only exist in the bundle table but not in the bundle_dependency table.
         if len(dependencies) == 0:
@@ -720,8 +725,7 @@ class BundleModel(object):
                 .select_from(cl_bundle)
                 .where(
                     and_(
-                        cl_bundle.c.command == command,
-                        cl_bundle.c.owner_id == user_id,
+                        base_clause,
                         cl_bundle.c.uuid.notin_(
                             select([cl_bundle_dependency.c.child_uuid]).select_from(
                                 cl_bundle_dependency
@@ -745,33 +749,32 @@ class BundleModel(object):
                         cl_bundle_dependency.c.parent_uuid == dep['parent_uuid'],
                     )
                 )
-            # Step 1: filter by input command and the number of dependencies
-            command_filter = (
-                select([cl_bundle_dependency.c.child_uuid])
-                .select_from(
-                    cl_bundle.join(
-                        cl_bundle_dependency, cl_bundle.c.uuid == cl_bundle_dependency.c.child_uuid
-                    )
+
+            def sql_query(from_clause, where_clause):
+                return (
+                    select([cl_bundle_dependency.c.child_uuid])
+                    .select_from(from_clause)
+                    .where(where_clause)
+                    # child_path is unique across all dependencies, aggregate on child_uuid
+                    # and COUNT the total the number of unique dependencies per child_uuid
+                    .group_by(cl_bundle_dependency.c.child_uuid)
+                    .having(func.count(cl_bundle_dependency.c.child_path) == len(dependencies))
+                    # Ensure the order of the returning bundles will be in the order of they were created.
+                    .order_by(cl_bundle_dependency.c.id)
                 )
-                .where(and_(cl_bundle.c.command == command, cl_bundle.c.owner_id == user_id))
-                # child_path is unique across all dependencies, aggregate on child_uuid
-                # and COUNT the total the number of unique dependencies per child_uuid
-                .group_by(cl_bundle_dependency.c.child_uuid)
-                .having(func.count(cl_bundle_dependency.c.child_path) == len(dependencies))
+
+            # Step 1: filter by input command and the number of dependencies
+            command_filter = sql_query(
+                from_clause=cl_bundle.join(
+                    cl_bundle_dependency, cl_bundle.c.uuid == cl_bundle_dependency.c.child_uuid
+                ),
+                where_clause=base_clause,
             )
             uuids = self._execute_query(command_filter)
 
-            # Step 2: filter by each dependency (child_path, parent_uuid) pair in the bundle_dependency table
-            query = (
-                select([cl_bundle_dependency.c.child_uuid])
-                .select_from(cl_bundle_dependency)
-                .where(and_(cl_bundle_dependency.c.child_uuid.in_(uuids), or_(*clause)))
-                # child_path is unique across all dependencies, aggregate on child_uuid
-                # and COUNT the total the number of unique dependencies per child_uuid
-                .group_by(cl_bundle_dependency.c.child_uuid)
-                .having(func.count(cl_bundle_dependency.c.child_path) == len(dependencies))
-                # Ensure the order of the returning bundles will be in the order of they were created.
-                .order_by(cl_bundle_dependency.c.id)
+            query = sql_query(
+                from_clause=cl_bundle_dependency,
+                where_clause=and_(cl_bundle_dependency.c.child_uuid.in_(uuids), or_(*clause)),
             )
 
         return self._execute_query(query)

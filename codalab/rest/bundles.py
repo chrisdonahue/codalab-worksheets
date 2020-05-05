@@ -118,6 +118,7 @@ def _fetch_bundles():
     descendant_depth = query_get_type(int, 'depth', None)
     command = query_get_type(str, 'command', '')
     dependencies = query_get_type(str, 'dependencies', '[]')
+    memoize_not_failed = query_get_bool('memoize_not_failed')
 
     if keywords:
         # Handle search keywords
@@ -134,7 +135,7 @@ def _fetch_bundles():
             local.model, request.user, worksheet_uuid, specs
         )
     elif command:
-        bundle_uuids = local.model.get_memoized_bundles(request.user.user_id, command, dependencies)
+        bundle_uuids = local.model.get_memoized_bundles(request.user.user_id, command, dependencies, success=memoize_not_failed)
     else:
         abort(
             http.client.BAD_REQUEST,
