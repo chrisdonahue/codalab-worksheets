@@ -135,7 +135,7 @@ def _fetch_bundles():
             local.model, request.user, worksheet_uuid, specs
         )
     elif command:
-        bundle_uuids = local.model.get_memoized_bundles(request.user.user_id, command, dependencies, success=memoize_not_failed)
+        bundle_uuids = local.model.get_memoized_bundles(request.user.user_id, command, dependencies, allow_failed=memoize_not_failed)
     else:
         abort(
             http.client.BAD_REQUEST,
