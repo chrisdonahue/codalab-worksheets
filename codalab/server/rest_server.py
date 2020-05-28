@@ -268,6 +268,10 @@ def run_rest_server(manager, debug, num_processes, num_threads):
         debug=debug,
         server='gunicorn',
         workers=num_processes,
+        errorlog="-",
+        accesslog="-",
+        loglevel="debug",
+        capture_output=True,
         worker_class='gthread',
         threads=num_threads,
         worker_tmp_dir='/tmp',  # don't use globally set tempdir
